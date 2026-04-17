@@ -11,10 +11,60 @@ const WebSocket = require('ws');
 
 const PORT = 8082;
 
-// API kljuc (iz CLI argumenta ili env-a ili hardkodirano)
+// API kljucevi (iz env-a ili hardkodirano)
 const API_KEY = process.env.AISSTREAM_KEY
     || process.argv[2]
     || 'd4bc0919c8e66730d6eae26b4dd148e87185a7ed';
+
+const DATALASTIC_KEY = process.env.DATALASTIC_KEY
+    || 'f8cb7c66-08d4-4c53-a802-ef5b36aac5e6';
+
+// Datalastic centri za pokrivanje isto\u010dne strane (hormuztoll pokriva zapad)
+// Svaki max 50km radius (Datalastic ograni\u010denje free tier-a). \u0160tedljivo = 2 centra.
+const DATALASTIC_CENTERS = [
+    { lat: 25.2, lon: 56.5, label: 'Fujairah + isto\u010dni izlaz tjesnaca' },
+    { lat: 23.5, lon: 59.0, label: 'Oman obala + Arapsko more' }
+];
+
+// ISO 3166-1 alpha-2 -> hrvatski naziv (Datalastic country_iso)
+const ISO_TO_FLAG = {
+    AD:'Andora',AE:'UAE',AF:'Afganistan',AG:'Antigva i Barbuda',AI:'Anguila',AL:'Albanija',AM:'Armenija',
+    AO:'Angola',AR:'Argentina',AS:'Am. Samoa',AT:'Austrija',AU:'Australija',AW:'Aruba',AZ:'Azerbajd\u017ean',
+    BA:'BiH',BB:'Barbados',BD:'Banglade\u0161',BE:'Belgija',BF:'Burkina Faso',BG:'Bugarska',BH:'Bahrein',
+    BI:'Burundi',BJ:'Benin',BM:'Bermudi',BN:'Brunej',BO:'Bolivija',BR:'Brazil',BS:'Bahami',BT:'Butan',
+    BW:'Bocvana',BY:'Bjelorusija',BZ:'Belize',CA:'Kanada',CD:'DR Kongo',CF:'SAR',CG:'Kongo',CH:'\u0160vicarska',
+    CI:'Obala Bjelokosti',CK:'Cookovi otoci',CL:'\u010cile',CM:'Kamerun',CN:'Kina',CO:'Kolumbija',CR:'Kostarika',
+    CU:'Kuba',CV:'Kabo Verde',CY:'Cipar',CZ:'Rep. \u010ce\u0161ka',DE:'Njema\u010dka',DJ:'D\u017eibuti',DK:'Danska',
+    DM:'Dominika',DO:'Dominikanska Rep.',DZ:'Al\u017eir',EC:'Ekvador',EE:'Estonija',EG:'Egipat',ER:'Eritreja',
+    ES:'\u0160panjolska',ET:'Etiopija',FI:'Finska',FJ:'Fid\u017ei',FM:'Mikronezija',FO:'Farski otoci',FR:'Francuska',
+    GA:'Gabon',GB:'UK',GD:'Grenada',GE:'Gruzija',GH:'Gana',GI:'Gibraltar',GL:'Grenland',GM:'Gambija',
+    GN:'Gvineja',GQ:'Ekv. Gvineja',GR:'Gr\u010dka',GT:'Gvatemala',GW:'Gvineja-Bisau',GY:'Gvajana',HK:'Hong Kong',
+    HN:'Honduras',HR:'Hrvatska',HT:'Haiti',HU:'Ma\u0111arska',ID:'Indonezija',IE:'Irska',IL:'Izrael',IM:'Otok Man',
+    IN:'Indija',IQ:'Irak',IR:'Iran',IS:'Island',IT:'Italija',JM:'Jamajka',JO:'Jordan',JP:'Japan',KE:'Kenija',
+    KG:'Kirgistan',KH:'Kambod\u017ea',KI:'Kiribati',KM:'Komori',KN:'St. Kitts i Nevis',KP:'S. Koreja',
+    KR:'J. Koreja',KW:'Kuvajt',KY:'Kajmanski otoci',KZ:'Kazahstan',LA:'Laos',LB:'Libanon',LC:'Sv. Lucija',
+    LI:'Lihten\u0161tajn',LK:'\u0160ri Lanka',LR:'Liberija',LS:'Lesoto',LT:'Litva',LU:'Luksemburg',LV:'Latvija',
+    LY:'Libija',MA:'Maroko',MC:'Monako',MD:'Moldavija',ME:'Crna Gora',MG:'Madagaskar',MH:'Mar\u0161alovi otoci',
+    MK:'Sjev. Makedonija',ML:'Mali',MM:'Mjanmar',MN:'Mongolija',MO:'Makao',MP:'Sjev. Marijanski otoci',
+    MR:'Mauretanija',MS:'Montserrat',MT:'Malta',MU:'Mauricijus',MV:'Maldivi',MW:'Malavi',MX:'Meksiko',
+    MY:'Malezija',MZ:'Mozambik',NA:'Namibija',NC:'Nova Kaledonija',NE:'Niger',NG:'Nigerija',NI:'Nikaragva',
+    NL:'Nizozemska',NO:'Norve\u0161ka',NP:'Nepal',NR:'Nauru',NU:'Niue',NZ:'Novi Zeland',OM:'Oman',PA:'Panama',
+    PE:'Peru',PF:'Fr. Polinezija',PG:'Papua N. Gvineja',PH:'Filipini',PK:'Pakistan',PL:'Poljska',PR:'Portoriko',
+    PS:'Palestina',PT:'Portugal',PW:'Palau',PY:'Paragvaj',QA:'Katar',RE:'Reunion',RO:'Rumunjska',RS:'Srbija',
+    RU:'Rusija',RW:'Ruanda',SA:'Saudijska Arabija',SB:'Salomonski otoci',SC:'Sej\u0161eli',SD:'Sudan',SE:'\u0160vedska',
+    SG:'Singapur',SI:'Slovenija',SK:'Slova\u010dka',SL:'Sijera Leone',SM:'San Marino',SN:'Senegal',SO:'Somalija',
+    SR:'Surinam',SS:'J. Sudan',ST:'Sv. Toma',SV:'El Salvador',SY:'Sirija',SZ:'Esvatini',TC:'Turks i Caicos',
+    TD:'\u010cad',TG:'Togo',TH:'Tajland',TJ:'Tad\u017eikistan',TL:'Isto\u010dni Timor',TM:'Turkmenistan',TN:'Tunis',
+    TO:'Tonga',TR:'Turska',TT:'Trinidad i Tobago',TV:'Tuvalu',TW:'Tajvan',TZ:'Tanzanija',UA:'Ukrajina',
+    UG:'Uganda',US:'SAD',UY:'Urugvaj',UZ:'Uzbekistan',VC:'St. Vincent',VE:'Venezuela',VG:'Brit. Dj. otoci',
+    VI:'U.S. Dj. otoci',VN:'Vijetnam',VU:'Vanuatu',WF:'Wallis i Futuna',WS:'Samoa',YE:'Jemen',ZA:'J. Afrika',
+    ZM:'Zambija',ZW:'Zimbabve'
+};
+
+function flagFromIso(iso) {
+    if (!iso) return null;
+    return ISO_TO_FLAG[iso.toUpperCase()] || iso;
+}
 
 // \u0160iroki bounding box za pretplatu: obuhva\u0107a Perzijski zaljev,
 // tjesnac i Omanski zaljev tako da vidimo plovila koja namjeravaju pro\u0107i.
@@ -337,6 +387,120 @@ function startHormuzTollPolling() {
     hormuzPollTimer = setInterval(pollHormuzToll, 120000); // svakih 2 min
 }
 
+// --- Datalastic (free tier, 50km radius, 100 poziva/mj) ---
+// Pokriva isto\u010dnu stranu tjesnaca (Oman, Fujairah, Arapsko more)
+function fetchDatalasticRadius(lat, lon, radiusKm) {
+    return new Promise((resolve, reject) => {
+        const p = `/api/v0/vessel_inradius?api-key=${DATALASTIC_KEY}&lat=${lat}&lon=${lon}&radius=${radiusKm}`;
+        const opts = {
+            hostname: 'api.datalastic.com', path: p, method: 'GET',
+            headers: { 'User-Agent': 'Hormuz-Tracker/1.0', 'Accept': 'application/json' },
+            timeout: 15000
+        };
+        const req = https.request(opts, (res) => {
+            let body = '';
+            res.on('data', (c) => { body += c; });
+            res.on('end', () => {
+                try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+            });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+        req.end();
+    });
+}
+
+async function pollDatalasticAll() {
+    if (!DATALASTIC_KEY) return;
+    let totalAdded = 0, totalEnriched = 0;
+    for (const c of DATALASTIC_CENTERS) {
+        try {
+            stats.datalasticCalls = (stats.datalasticCalls || 0) + 1;
+            const res = await fetchDatalasticRadius(c.lat, c.lon, 50);
+            if (!res || !res.meta || !res.meta.success) {
+                console.warn(`datalastic ${c.label}: ${res?.meta?.message || 'gre\u0161ka'}`);
+                continue;
+            }
+            const list = (res.data && res.data.vessels) || [];
+            const now = new Date().toISOString();
+            let added = 0, enriched = 0;
+            list.forEach(v => {
+                const key = String(v.mmsi || '');
+                if (!key || key === 'null') return;
+                const inStrait = (typeof v.lat === 'number' && typeof v.lon === 'number' &&
+                                  inBox(v.lat, v.lon, STRAIT_BOX));
+                if (!vessels[key]) {
+                    added++;
+                    vessels[key] = {
+                        mmsi: key,
+                        name: (v.name || '').trim() || key,
+                        flag: flagFromIso(v.country_iso) || flagFromMMSI(v.mmsi),
+                        shipType: null,
+                        typeName: v.type_specific || v.type || 'Nepoznato',
+                        category: mapDatalasticTypeToCategory(v.type, v.type_specific),
+                        destination: v.destination || '',
+                        previousDestination: '',
+                        destinationHistory: [],
+                        lat: v.lat, lon: v.lon,
+                        cog: v.course, sog: v.speed, heading: v.heading,
+                        wasInStrait: !!inStrait,
+                        firstSeenInStrait: inStrait ? now : null,
+                        firstSeen: now, lastSeen: now,
+                        source: 'datalastic'
+                    };
+                } else {
+                    enriched++;
+                    const e = vessels[key];
+                    // Datalastic nudi vi\u0161e info nego hormuztoll - popuni ako nedostaje
+                    if (!e.name || /^\d+$/.test(e.name)) e.name = (v.name || e.name).trim();
+                    const dlFlag = flagFromIso(v.country_iso);
+                    if (dlFlag && e.flag.startsWith('MID ')) e.flag = dlFlag;
+                    if (!e.typeName || e.typeName === 'Nepoznato') {
+                        e.typeName = v.type_specific || v.type || e.typeName;
+                        e.category = mapDatalasticTypeToCategory(v.type, v.type_specific);
+                    }
+                    if (v.destination && v.destination !== e.destination) {
+                        if (e.destination) { e.previousDestination = e.destination; }
+                        e.destination = v.destination;
+                    }
+                    if (typeof v.lat === 'number') e.lat = v.lat;
+                    if (typeof v.lon === 'number') e.lon = v.lon;
+                    if (typeof v.course === 'number') e.cog = v.course;
+                    if (typeof v.speed === 'number') e.sog = v.speed;
+                    if (typeof v.heading === 'number') e.heading = v.heading;
+                    e.lastSeen = now;
+                    if (inStrait && !e.wasInStrait) {
+                        e.wasInStrait = true;
+                        e.firstSeenInStrait = now;
+                    }
+                }
+            });
+            console.log(`datalastic ${c.label}: ${list.length} plovila (novo ${added}, oboga\u0107eno ${enriched})`);
+            totalAdded += added; totalEnriched += enriched;
+        } catch (e) {
+            console.error(`datalastic ${c.label} gre\u0161ka:`, e.message);
+        }
+    }
+    stats.datalasticFetches = (stats.datalasticFetches || 0) + 1;
+    stats.datalasticLast = new Date().toISOString();
+    scheduleSave();
+    console.log(`Datalastic sync: ${totalAdded} novo, ${totalEnriched} oboga\u0107eno`);
+}
+
+function mapDatalasticTypeToCategory(type, specific) {
+    const t = (type || '').toLowerCase();
+    const s = (specific || '').toLowerCase();
+    if (t === 'tanker' || s.includes('tanker') || s.includes('lng') || s.includes('lpg') || s.includes('oil')) return 'Tanker';
+    if (t === 'cargo' || s.includes('cargo') || s.includes('container') || s.includes('bulk')) return 'Teretni';
+    if (t === 'passenger' || s.includes('passenger') || s.includes('cruise')) return 'Putni\u010dki';
+    if (s.includes('fishing')) return 'Ribarski';
+    if (s.includes('tug')) return 'Tegljenje';
+    if (s.includes('yacht') || s.includes('sail')) return 'Jahte/Jedrilice';
+    if (s.includes('pilot') || s.includes('military') || s.includes('patrol') || s.includes('law')) return 'Slu\u017ebeni';
+    if (t === 'other' || s === 'other' || !t) return 'Nepoznato';
+    return 'Ostalo';
+}
+
 function connectAIS() {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     if (!API_KEY || API_KEY.length < 10) {
@@ -573,20 +737,25 @@ const server = http.createServer((req, res) => {
                 fetches: stats.hormuzTollFetches || 0,
                 lastFetch: stats.hormuzTollLast || null,
                 lastCount: stats.hormuzTollCount || 0
+            },
+            datalastic: {
+                syncs: stats.datalasticFetches || 0,
+                apiCalls: stats.datalasticCalls || 0,
+                lastFetch: stats.datalasticLast || null,
+                centers: DATALASTIC_CENTERS.length
             }
         }));
         return;
     }
 
     if (pathname === '/api/refresh') {
-        // Ru\u010dno osvje\u017eavanje: trigger hormuztoll fetch + reconnect AIS
+        // Ru\u010dno osvje\u017eavanje: hormuztoll + Datalastic + AIS reconnect
         try { if (ws) ws.close(); } catch (e) {}
-        pollHormuzToll().then(() => {
-            // no-op; response ispod ide odmah
-        }).catch(() => {});
+        pollHormuzToll().catch(() => {});
+        pollDatalasticAll().catch(() => {});
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, message: 'Osvje\u017eavanje pokrenuto (hormuztoll + AIS reconnect)' }));
+        res.end(JSON.stringify({ success: true, message: 'Osvje\u017eavanje: hormuztoll + Datalastic + AIS reconnect' }));
         return;
     }
 
@@ -627,12 +796,16 @@ server.listen(PORT, () => {
   Bounding box: ${JSON.stringify(HORMUZ_BBOX)}
   Trenutno pra\u0107eno: ${Object.keys(vessels).length} plovila
   Izvori:
-    - hormuztoll.com (primarno, ~1290 plovila, poll svakih 2 min)
-    - AISStream.io (sekundarno, EU/NA/AU pokrivenost)
+    - hormuztoll.com (primarno, zapad = Perzijski zaljev, auto 2 min)
+    - Datalastic (isto\u010dna strana: tjesnac + Oman + Arap. more, 4 centra)
+    - AISStream.io (best-effort, ograni\u010dena pokrivenost za regiju)
 ============================================================
 `);
     connectAIS();
     startHormuzTollPolling();
+    // Datalastic: SAMO jedan startup fetch + na svaki /api/refresh.
+    // Free tier je ograni\u010den, pa NE aktiviramo interval.
+    pollDatalasticAll().catch(e => console.error('datalastic init:', e.message));
 });
 
 // Graceful shutdown
