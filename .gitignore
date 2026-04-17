@@ -1,0 +1,6 @@
+node_modules/
+data/vessels.json
+test-ais.js
+ships.json
+*.log
+.env

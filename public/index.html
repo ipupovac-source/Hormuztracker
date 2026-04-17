@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Hormuz Tjesnac – Praćenje brodova</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+    <header>
+        <div class="title">
+            <h1>⚓ Hormuz Tjesnac – Praćenje brodova</h1>
+            <div class="subtitle" id="statusLine">Učitavanje...</div>
+        </div>
+        <div class="controls">
+            <label>Od:
+                <input type="date" id="dateFrom" />
+            </label>
+            <label>Do:
+                <input type="date" id="dateTo" />
+            </label>
+            <button id="btnRefresh" class="btn-primary">🔄 Osvježi</button>
+            <button id="btnReconnect" class="btn-secondary" title="Ponovno se spoji na AISStream">⚡ Reconnect AIS</button>
+        </div>
+    </header>
+
+    <section class="stats">
+        <div class="stat-card passed">
+            <div class="stat-label">Prošli kroz tjesnac</div>
+            <div class="stat-value" id="countPassed">0</div>
+        </div>
+        <div class="stat-card intent">
+            <div class="stat-label">Namjera prolaska</div>
+            <div class="stat-value" id="countIntent">0</div>
+        </div>
+        <div class="stat-card nearby">
+            <div class="stat-label">U širem području</div>
+            <div class="stat-value" id="countNearby">0</div>
+        </div>
+        <div class="stat-card total">
+            <div class="stat-label">Ukupno praćeno</div>
+            <div class="stat-value" id="countTotal">0</div>
+        </div>
+    </section>
+
+    <section class="methodology" id="methodologyBox">
+        <details>
+            <summary><strong>Kako se određuje kategorija?</strong> (kliknite za detalje)</summary>
+            <ul>
+                <li><span class="badge passed">Prošli</span> — plovilo je najmanje jednom zabilježeno AIS pozicijom unutar užeg pojasa (26°–27°N, 56°–57°E). Ostaje u toj kategoriji trajno.</li>
+                <li><span class="badge intent">Namjera</span> — plovilo je u zapadnom (Perzijski zaljev) ili istočnom (Omanski zaljev) prilazu, SOG &gt; 1 kn, i COG (kurs nad dnom) unutar 45° od smjera prema središtu tjesnaca (26.5°N, 56.5°E). Temelji se isključivo na AIS pozicijama, brzini i kursu – <em>ne</em> na polju Destination koje posade često ne ažuriraju točno.</li>
+                <li><span class="badge nearby">U blizini</span> — plovilo je u širem bounding boxu (22°–28°N, 50°–62°E) ali ne zadovoljava uvjete gornjih kategorija.</li>
+            </ul>
+        </details>
+    </section>
+
+    <div id="map"></div>
+
+    <section class="filters">
+        <div class="filter-group">
+            <label>Kategorija:</label>
+            <select id="filterCategory">
+                <option value="all">Sve</option>
+                <option value="passed">Prošli</option>
+                <option value="intent">Namjera</option>
+                <option value="nearby">U blizini</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Tip:</label>
+            <select id="filterType">
+                <option value="all">Svi tipovi</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Zastava:</label>
+            <select id="filterFlag">
+                <option value="all">Sve zastave</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Pretraga:</label>
+            <input type="text" id="filterSearch" placeholder="Ime broda / MMSI / destinacija"/>
+        </div>
+    </section>
+
+    <section class="breakdown">
+        <div class="breakdown-box">
+            <h3>Po tipu (filtrirano)</h3>
+            <div id="breakdownType"></div>
+        </div>
+        <div class="breakdown-box">
+            <h3>Po zastavi (filtrirano)</h3>
+            <div id="breakdownFlag"></div>
+        </div>
+    </section>
+
+    <section class="table-wrap">
+        <table id="shipsTable">
+            <thead>
+                <tr>
+                    <th data-sort="classification">Kategorija</th>
+                    <th data-sort="name">Ime broda</th>
+                    <th data-sort="mmsi">MMSI</th>
+                    <th data-sort="flag">Zastava</th>
+                    <th data-sort="typeName">Tip</th>
+                    <th data-sort="category">Kategorija tipa</th>
+                    <th data-sort="previousDestination">Prethodna (AIS dest.)</th>
+                    <th data-sort="destination">Sljedeća (AIS dest.)</th>
+                    <th data-sort="sog">Brzina (kn)</th>
+                    <th data-sort="cog">Kurs</th>
+                    <th data-sort="lastSeen">Zadnje viđen</th>
+                </tr>
+            </thead>
+            <tbody id="shipsBody"></tbody>
+        </table>
+    </section>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/app.js"></script>
+</body>
+</html>

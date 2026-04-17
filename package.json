@@ -1,0 +1,12 @@
+{
+  "name": "hormuz-tracker",
+  "version": "1.0.0",
+  "description": "Prati brodove kroz Hormuz tjesnac preko AISStream.io",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.20.0"
+  }
+}
