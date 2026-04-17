@@ -487,6 +487,96 @@ async function pollDatalasticAll() {
     console.log(`Datalastic sync: ${totalAdded} novo, ${totalEnriched} oboga\u0107eno`);
 }
 
+// --- Provjera 24h povijesti za prolazak (vessel_history endpoint) ---
+// Tro\u0161i 1 Datalastic poziv po brodu, pa se poziva ru\u010dno i ograni\u010deno
+function fetchDatalasticHistory(mmsi, days = 1) {
+    return new Promise((resolve, reject) => {
+        const p = `/api/v0/vessel_history?api-key=${DATALASTIC_KEY}&mmsi=${mmsi}&days=${days}`;
+        const opts = {
+            hostname: 'api.datalastic.com', path: p, method: 'GET',
+            headers: { 'User-Agent': 'Hormuz-Tracker/1.0', 'Accept': 'application/json' },
+            timeout: 15000
+        };
+        const req = https.request(opts, (res) => {
+            let body = '';
+            res.on('data', (c) => { body += c; });
+            res.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+        req.end();
+    });
+}
+
+// Euklidska udaljenost od centra tjesnaca za prioritetizaciju
+function distanceToStrait(v) {
+    if (v.lat == null || v.lon == null) return Infinity;
+    const dLat = v.lat - 26.5, dLon = v.lon - 56.5;
+    return Math.sqrt(dLat * dLat + dLon * dLon);
+}
+
+function candidatesForHistoryCheck(limit = 20) {
+    // Kandidati = u \u0161irem podru\u010dju tjesnaca, NISU ve\u0107 ozna\u010deni kao passed,
+    // imaju MMSI koji je valjan (IMO MID check)
+    const pool = [];
+    for (const k in vessels) {
+        const v = vessels[k];
+        if (v.wasInStrait) continue; // ve\u0107 znamo da je pro\u0161ao
+        if (v.lat == null || v.lon == null) continue;
+        // prostorni filter: blizu tjesnaca (3\u00b0 box oko tjesnaca)
+        if (v.lon < 54.5 || v.lon > 58.5) continue;
+        if (v.lat < 24.0 || v.lat > 28.0) continue;
+        // ne tro\u0161imo na stajalice (u anchorage-u > 24h)
+        if ((v.sog || 0) < 0.5 && v._historyChecked) continue;
+        if (v._historyChecked) continue; // jednom po sesiji dosta
+        pool.push(v);
+    }
+    pool.sort((a, b) => distanceToStrait(a) - distanceToStrait(b));
+    return pool.slice(0, limit);
+}
+
+async function runHistoryCheck(limit) {
+    if (!DATALASTIC_KEY) return { error: 'Nema Datalastic klju\u010da' };
+    const pool = candidatesForHistoryCheck(limit);
+    if (!pool.length) return { checked: 0, newlyPassed: 0, apiCalls: 0, note: 'Nema kandidata (svi relevantni ve\u0107 provjereni ili ozna\u010deni)' };
+
+    let checked = 0, newlyPassed = 0, errors = 0;
+    const results = [];
+    for (const v of pool) {
+        try {
+            stats.datalasticCalls = (stats.datalasticCalls || 0) + 1;
+            stats.historyChecks = (stats.historyChecks || 0) + 1;
+            const res = await fetchDatalasticHistory(v.mmsi, 1);
+            v._historyChecked = new Date().toISOString();
+            checked++;
+            if (!res.meta?.success) { errors++; continue; }
+            const positions = res.data?.positions || [];
+            let passedAt = null;
+            for (const p of positions) {
+                if (typeof p.lat === 'number' && typeof p.lon === 'number' && inBox(p.lat, p.lon, STRAIT_BOX)) {
+                    passedAt = p.last_position_UTC || new Date(p.last_position_epoch * 1000).toISOString();
+                    break;
+                }
+            }
+            if (passedAt && !v.wasInStrait) {
+                v.wasInStrait = true;
+                v.firstSeenInStrait = passedAt;
+                v._passedViaHistory = true;
+                newlyPassed++;
+                results.push({ mmsi: v.mmsi, name: v.name, flag: v.flag, passedAt });
+            }
+        } catch (e) {
+            errors++;
+        }
+    }
+    scheduleSave();
+    return {
+        checked, newlyPassed, errors,
+        apiCalls: pool.length,
+        newlyPassedVessels: results
+    };
+}
+
 function mapDatalasticTypeToCategory(type, specific) {
     const t = (type || '').toLowerCase();
     const s = (specific || '').toLowerCase();
@@ -756,6 +846,20 @@ const server = http.createServer((req, res) => {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.writeHead(200);
         res.end(JSON.stringify({ success: true, message: 'Osvje\u017eavanje: hormuztoll + Datalastic + AIS reconnect' }));
+        return;
+    }
+
+    if (pathname === '/api/history_check') {
+        const limit = Math.min(parseInt(parsed.query.limit) || 20, 50);
+        runHistoryCheck(limit).then(result => {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.writeHead(200);
+            res.end(JSON.stringify({ success: true, ...result }));
+        }).catch(e => {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.writeHead(500);
+            res.end(JSON.stringify({ success: false, error: e.message }));
+        });
         return;
     }
 

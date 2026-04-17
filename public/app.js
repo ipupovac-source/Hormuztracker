@@ -264,6 +264,37 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetch('/api/refresh');
         setTimeout(loadStatus, 1500);
     });
+    document.getElementById('btnHistory').addEventListener('click', async () => {
+        const btn = document.getElementById('btnHistory');
+        const limit = parseInt(document.getElementById('historyLimit').value) || 20;
+        const ok = confirm(`Provjerit ću 24h povijest kretanja za do ${limit} brodova u blizini tjesnaca.\n\nTo troši ${limit} Datalastic poziva. Nastavljam?`);
+        if (!ok) return;
+        btn.disabled = true;
+        btn.textContent = '⏳ Provjeravam...';
+        try {
+            const r = await fetch(`/api/history_check?limit=${limit}`);
+            const j = await r.json();
+            if (!j.success) {
+                alert('Greška: ' + (j.error || 'nepoznata'));
+            } else {
+                let msg = `Provjereno ${j.checked} brodova, potrošeno ${j.apiCalls} API poziva.\n`;
+                msg += `Novo označeno kao "prošlo": ${j.newlyPassed}.`;
+                if (j.newlyPassedVessels && j.newlyPassedVessels.length) {
+                    msg += '\n\nDetalji:\n' + j.newlyPassedVessels.map(v =>
+                        ` - ${v.name || v.mmsi} (${v.flag}) u ${new Date(v.passedAt).toLocaleString('hr-HR')}`
+                    ).join('\n');
+                }
+                if (j.note) msg += '\n\n' + j.note;
+                alert(msg);
+                await loadShips();
+            }
+        } catch (e) {
+            alert('Greška: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '📜 Provjeri povijest 24h';
+        }
+    });
     ['filterCategory', 'filterType', 'filterFlag'].forEach(id => {
         document.getElementById(id).addEventListener('change', applyFilters);
     });
